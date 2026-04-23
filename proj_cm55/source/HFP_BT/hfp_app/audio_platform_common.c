@@ -7,33 +7,33 @@
 * Related Document: See README.md
 *
 ********************************************************************************
- * (c) 2025, Infineon Technologies AG, or an affiliate of Infineon
- * Technologies AG. All rights reserved.
- * This software, associated documentation and materials ("Software") is
- * owned by Infineon Technologies AG or one of its affiliates ("Infineon")
- * and is protected by and subject to worldwide patent protection, worldwide
- * copyright laws, and international treaty provisions. Therefore, you may use
- * this Software only as provided in the license agreement accompanying the
- * software package from which you obtained this Software. If no license
- * agreement applies, then any use, reproduction, modification, translation, or
- * compilation of this Software is prohibited without the express written
- * permission of Infineon.
- *
- * Disclaimer: UNLESS OTHERWISE EXPRESSLY AGREED WITH INFINEON, THIS SOFTWARE
- * IS PROVIDED AS-IS, WITH NO WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
- * INCLUDING, BUT NOT LIMITED TO, ALL WARRANTIES OF NON-INFRINGEMENT OF
- * THIRD-PARTY RIGHTS AND IMPLIED WARRANTIES SUCH AS WARRANTIES OF FITNESS FOR A
- * SPECIFIC USE/PURPOSE OR MERCHANTABILITY.
- * Infineon reserves the right to make changes to the Software without notice.
- * You are responsible for properly designing, programming, and testing the
- * functionality and safety of your intended application of the Software, as
- * well as complying with any legal requirements related to its use. Infineon
- * does not guarantee that the Software will be free from intrusion, data theft
- * or loss, or other breaches ("Security Breaches"), and Infineon shall have
- * no liability arising out of any Security Breaches. Unless otherwise
- * explicitly approved by Infineon, the Software may not be used in any
- * application where a failure of the Product or any consequences of the use
- * thereof can reasonably be expected to result in personal injury.
+* (c) 2025-2026, Infineon Technologies AG, or an affiliate of Infineon
+* Technologies AG. All rights reserved.
+* This software, associated documentation and materials ("Software") is
+* owned by Infineon Technologies AG or one of its affiliates ("Infineon")
+* and is protected by and subject to worldwide patent protection, worldwide
+* copyright laws, and international treaty provisions. Therefore, you may use
+* this Software only as provided in the license agreement accompanying the
+* software package from which you obtained this Software. If no license
+* agreement applies, then any use, reproduction, modification, translation, or
+* compilation of this Software is prohibited without the express written
+* permission of Infineon.
+*
+* Disclaimer: UNLESS OTHERWISE EXPRESSLY AGREED WITH INFINEON, THIS SOFTWARE
+* IS PROVIDED AS-IS, WITH NO WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+* INCLUDING, BUT NOT LIMITED TO, ALL WARRANTIES OF NON-INFRINGEMENT OF
+* THIRD-PARTY RIGHTS AND IMPLIED WARRANTIES SUCH AS WARRANTIES OF FITNESS FOR A
+* SPECIFIC USE/PURPOSE OR MERCHANTABILITY.
+* Infineon reserves the right to make changes to the Software without notice.
+* You are responsible for properly designing, programming, and testing the
+* functionality and safety of your intended application of the Software, as
+* well as complying with any legal requirements related to its use. Infineon
+* does not guarantee that the Software will be free from intrusion, data theft
+* or loss, or other breaches ("Security Breaches"), and Infineon shall have
+* no liability arising out of any Security Breaches. Unless otherwise
+* explicitly approved by Infineon, the Software may not be used in any
+* application where a failure of the Product or any consequences of the use
+* thereof can reasonably be expected to result in personal injury.
 *******************************************************************************/
 /*******************************************************************************
 * Header file includes
@@ -57,6 +57,8 @@
 #include "cy_utils.h"
 #include "wiced_bt_types.h"
 #include "app_i2s.h"
+//#include "app_pdm_pcm.h"
+
 
 /* Enable below block for verbose logging via printf  */
 #if 0
@@ -95,6 +97,10 @@ uint32_t format;
 /* Handle of the queue holding the Audio TX data for HFP. */
 QueueHandle_t audio_tx_q;
 
+i2s_playback_q_data_t i2s_playback_q_data_hfp;
+
+bool mic_capture_active = false;
+
 extern volatile uint32_t sco_audio_size;
 extern volatile uint32_t sco_audio_read_ptr;
 extern volatile uint32_t sco_audio_write_ptr;
@@ -119,7 +125,10 @@ static const uint8_t msbc_tx_first_byte = ONE;
 static const uint8_t msbc_tx_second_byte[] = {0x08, 0x38, 0xC8, 0xF8};
 static  SBC_DEC_PARAMS  msbc_decoder_config = { ZERO };
 static audio_tx_q_data_t audio_tx_q_data;
-static bool mic_capture_active = false;
+
+static uint32_t next_rx_pcm_frame_num_to_be_sent = 0;
+static uint32_t current_rx_pcm_index = 0;
+static uint8_t *current_rx_pcm_ptr = NULL;
 
 /* Variable to send commands to Encoder task queue. */
 static audio_encoder_q_data_t encoder_q_data;
@@ -264,6 +273,10 @@ bool msbc_audio_init(audio_playback_config pb_config_params)
      * and callbacks.
      */
     audio_tx_q = xQueueCreate(AUDIO_TX_QUEUE_LENGTH, sizeof(audio_tx_q_data_t));
+ 
+    current_rx_pcm_index = 0;
+    next_rx_pcm_frame_num_to_be_sent = 0;
+    current_rx_pcm_ptr = rx_pcm_data;
 
    return true;
 }
@@ -356,6 +369,8 @@ bool start_audio_capture(void)
 {
     xQueueReset(audio_tx_q);
 
+    current_tx_pcm_index = 0;
+    current_tx_sbc_index = 0;
     mic_capture_active = true;
 
     app_pdm_pcm_activate();
@@ -381,6 +396,9 @@ bool stop_audio_capture(void)
 {
     app_pdm_pcm_deactivate();
 
+    current_tx_pcm_index = 0;
+    current_tx_sbc_index = 0;
+
     xQueueReset(audio_tx_q);
 
     mic_capture_active = false;
@@ -403,12 +421,18 @@ bool stop_audio_capture(void)
 *
 *******************************************************************************/
 void start_audio_playback(void)
-{    
+{
+    xQueueReset(i2s_playback_task_q);
+
     /* Enable I2S */
     app_i2s_enable();
     
     /* Activate and enable I2S TX interrupts */
     app_i2s_activate();
+
+    current_rx_pcm_index = 0;
+    next_rx_pcm_frame_num_to_be_sent = 0;
+    current_rx_pcm_ptr = rx_pcm_data;
 }
 
 /*******************************************************************************
@@ -426,9 +450,15 @@ void start_audio_playback(void)
 *******************************************************************************/
 void stop_audio_playback(void)
 {
+    xQueueReset(i2s_playback_task_q);
+
     app_i2s_deactivate();
 
     app_i2s_disable();
+
+    current_rx_pcm_index = 0;
+    next_rx_pcm_frame_num_to_be_sent = 0;
+    current_rx_pcm_ptr = rx_pcm_data;
 }
 
 /*******************************************************************************
@@ -491,10 +521,13 @@ static uint16_t get_msbc_frame_len(void)
 *******************************************************************************/
 void msbc_decode(uint8_t* p_rx_media, uint32_t media_len)
 {
-    SINT16 sbc_result = ZERO;
+    SINT16 sbc_result = 0;
     uint8_t *pIn = NULL;
+    uint8_t *pcm_ptr_to_be_sent = NULL;
+    uint32_t pcm_frame_num = 0;
+    static uint32_t j = 0;
 
-    if (msbc_frame_len > media_len || MSBC_MAX_INPUT_LEN < media_len)
+    if (msbc_frame_len > media_len || 60 < media_len)
     {
         WICED_BT_TRACE("msbc_decode(): invalid media_len=%u\n", media_len);
         return;
@@ -504,41 +537,53 @@ void msbc_decode(uint8_t* p_rx_media, uint32_t media_len)
 
     /* Decode one mSBC frame into PCM samples */
     sbc_result = SBC_Decoder_decoder(&msbc_decoder_config, pIn, msbc_frame_len,
-        (SINT16 *)&rx_pcm_data[ZERO]);
+        (SINT16 *)current_rx_pcm_ptr);
 
-    if (ZERO >= sbc_result)
+    if (0 >= sbc_result)
     {
         WICED_BT_TRACE("msbc_decode(): decode error=%d\n", sbc_result);
         return;
     }
 
-    /* sbc_result is the number of PCM samples (16-bit each) */
-    uint32_t num_samples = sbc_result;
-    int16_t *decoded_pcm = (int16_t *)&rx_pcm_data[ZERO];
-    
-    if(num_samples != (pcm_bytes_per_frame / 2))
+
+    if (sbc_result != (pcm_bytes_per_frame / 2))
     {
-        WICED_BT_TRACE("msbc_decode(): result length invalid=%u\n", num_samples);
+        printf ("msbc_decode():SBC_Decoder_decoder output length error: sbc_result (%d) != (pcm_bytes_per_frame / 2) (%d)\r\n", 
+            sbc_result, (pcm_bytes_per_frame / 2));
         return;
     }
-    
-    /* Push decoded PCM samples into circular buffer for I2S playback */
-    for (uint32_t i = ZERO; i < num_samples; i++)
-    {
-        sco_audio_buffer[sco_audio_write_ptr++] = decoded_pcm[i];
 
-        if (sco_audio_write_ptr >= SCO_PCM_BUFFER_SIZE)
+    current_rx_pcm_ptr += pcm_bytes_per_frame;
+    current_rx_pcm_index += pcm_bytes_per_frame;
+
+    pcm_frame_num = (current_rx_pcm_index / RX_PCM_FRAME_SIZE);
+
+    if (pcm_frame_num > next_rx_pcm_frame_num_to_be_sent)
+    {
+        for (uint32_t i = next_rx_pcm_frame_num_to_be_sent; i < pcm_frame_num; i++)
         {
-            sco_audio_write_ptr = ZERO;
+            while( j <= (i * RX_PCM_FRAME_SIZE))
+            {
+                pcm_ptr_to_be_sent = &(rx_pcm_data[j]);
+                i2s_playback_q_data_hfp.data = (uint8_t *) pcm_ptr_to_be_sent;
+                i2s_playback_q_data_hfp.data_len = 160 * sizeof(int16_t); 
+                if (pdTRUE != xQueueSend(i2s_playback_task_q, 
+                    &i2s_playback_q_data_hfp, portMAX_DELAY))
+                {
+                    printf(">>> Error:I2S Task Queue Send failed\r\n");
+                }
+                j += RX_PCM_FRAME_SIZE_BYTES;
+            }
         }
+        next_rx_pcm_frame_num_to_be_sent = pcm_frame_num;
     }
 
-    /* Update data count (protect from overflow) */
-    uint32_t bytes_added = num_samples * sizeof(int16_t);
-    sco_audio_size += bytes_added;
-    if (sco_audio_size > sizeof(sco_audio_buffer))
+    if (current_rx_pcm_index >= RX_PCM_BUFFER_SIZE)
     {
-        sco_audio_size = sizeof(sco_audio_buffer);
+        current_rx_pcm_index = 0;
+        next_rx_pcm_frame_num_to_be_sent = 0;
+        j = 0;
+        current_rx_pcm_ptr = rx_pcm_data;
     }
 }
 

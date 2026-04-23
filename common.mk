@@ -7,7 +7,7 @@
 #
 ################################################################################
 # \copyright
-# (c) 2025, Infineon Technologies AG, or an affiliate of Infineon
+# (c) 2025-2026, Infineon Technologies AG, or an affiliate of Infineon
 # Technologies AG.  SPDX-License-Identifier: Apache-2.0
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,15 +33,12 @@ TARGET=KIT_PSE84_EVAL_EPC2
 
 # Name of toolchain to use. Options include:
 #
-# GCC_ARM   -- GCC is available as part of ModusToolbox Setup program
-# ARM       -- ARM Compiler (must be installed separately)
-#
-# See also: CY_COMPILER_PATH below
-TOOLCHAIN=GCC_ARM
+# ARM      - ARM Compiler (must be installed separately)
+TOOLCHAIN=ARM
 
 # Toolchains supported by this code example. See README.md file.
 # This is used by automated build systems to identify the supported toolchains. 
-MTB_SUPPORTED_TOOLCHAINS?=GCC_ARM ARM 
+MTB_SUPPORTED_TOOLCHAINS?=ARM
 
 # Default build configuration. Options include:
 #
@@ -51,7 +48,15 @@ MTB_SUPPORTED_TOOLCHAINS?=GCC_ARM ARM
 #
 # If CONFIG is manually edited, ensure to update or regenerate
 # launch configurations for your IDE.
-CONFIG=Debug
+CONFIG=Release
+
+##################### Voice Core ###############################################
+
+# Audio Voice Core functionality. Options are
+# LIMITED - Limited time functionality. (Default)
+# FULL    - Full functionality.
+
+CONFIG_VOICE_CORE_MODE=LIMITED
 
 # Config file for postbuild sign and merge operations.
 # NOTE: Check the JSON file for the command parameters

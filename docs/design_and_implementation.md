@@ -50,7 +50,14 @@ The buttons, such as **USER_BTN1** and **USER_BTN2** on the board have been set 
   **Short press**  
   Send the *Call End* command to the connected smartphone.
 
+**DEEPCRAFT&trade; Audio Enhancement (AE) configuration**
 
+- To ensure clear, full-duplex audio, the application incorporates a sophisticated Audio Front End (AFE). This includes Acoustic Echo Cancellation (AEC) and noise suppression, which prevent the microphone from recapturing audio from the onboard speakers effectively eliminating echo during active calls.
+
+- The DEEPCRAFT&trade; Audio Enhancement (AE) modules are chosen via the DEEPCRAFT&trade; Audio Enhancement (AE) Configurator tool. Use the DEEPCRAFT&trade; Audio Enhancement (AE) Configurator project file present at path *proj_cm55\source\HFP_BT\audio_enhancement_application/hfp_hf_ae.mtbafe*.
+
+- Refer to [Audio Enhancement (AN240916)](https://www.infineon.com/AN240916) – DEEPCRAFT&trade; Audio Enhancement (AE) for understanding about the Audio Enhancement (AE) and tuning.
+  
 The application consists of the following functionality.
 
 | Function                                                          | Core |

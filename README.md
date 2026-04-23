@@ -2,7 +2,7 @@
 
 This application demonstrates a Hands-Free profile - Hands-Free (HFP-HF) using the AIROC&trade; Bluetooth&reg; stack. The application runs on the PSOC&trade; Edge E84 MCU Evaluation Kit and displays as an HF device. A remote mobile device can connect to it, allowing call controls.
 
-The HFP-HF implements basic telephonic simulation including answering/ending an incoming call, redial a number to make a call through onboard button actions. Once a call is active, the audio communications are available to and from the HF device and the audio gateway (AG) device (e.g. smartphone).
+The HFP-HF implementation supports essential telephony features, such as answering, ending, and redialing calls via onboard button actions. To ensure clear, full-duplex audio, the application incorporates a sophisticated Audio Front End (AFE). This includes Acoustic Echo Cancellation (AEC) and noise suppression, which prevent the microphone from recapturing audio from the onboard speakers effectively eliminating echo during active calls.
 
 This code example has a three project structure: CM33 secure, CM33 non-secure, and CM55 projects. All three projects are programmed to the external QSPI flash and executed in Execute in Place (XIP) mode. Extended boot launches the CM33 secure project from a fixed location in the external flash, which then configures the protection settings and launches the CM33 non-secure application. Additionally, CM33 non-secure application enables CM55 CPU and launches the CM55 application.
 
@@ -15,17 +15,14 @@ See the [Design and implementation](docs/design_and_implementation.md) for the f
 
 ## Requirements
 
-- [ModusToolbox&trade;](https://www.infineon.com/modustoolbox) v3.6 or later (tested with v3.6)
+- [ModusToolbox&trade;](https://www.infineon.com/modustoolbox) v3.7 or later (tested with v3.7)
 - Board support package (BSP) minimum required version: 1.0.0
 - Programming language: C
 - Associated parts: All [PSOC&trade; Edge MCU](https://www.infineon.com/products/microcontroller/32-bit-psoc-arm-cortex/32-bit-psoc-edge-arm) parts
 
 
 ## Supported toolchains (make variable 'TOOLCHAIN')
-
-- GNU Arm&reg; Embedded Compiler v14.2.1 (`GCC_ARM`) – Default value of `TOOLCHAIN`
 - Arm&reg; Compiler v6.22 (`ARM`)
-
 
 ## Supported kits (make variable 'TARGET')
 
@@ -46,7 +43,9 @@ Ensure the following jumper and pin configuration on board.
 
 See the [ModusToolbox&trade; tools package installation guide](https://www.infineon.com/ModusToolboxInstallguide) for information about installing and configuring the tools package.
 
-Install a terminal emulator if you do not have one. Instructions in this document use [Tera Term](https://teratermproject.github.io/index-en.html).
+- Install a terminal emulator if you do not have one. Instructions in this document use [Tera Term](https://teratermproject.github.io/index-en.html).
+
+- Install the DEEPCRAFT™ Audio Enhancement (AE) Tech Pack to access the Configurator tool
 
 This example requires no additional software or tools.
 
@@ -104,14 +103,11 @@ See [Using the code example](docs/using_the_code_example.md) for instructions on
     ![](images/hfp_hf_redial_call.png)
 
 
-> **Note:** The current version of the code example does not support echo cancellation, so echo will be audible on the connected smartphone or AG device. The echo cancellation feature is planned to be introduced in the next version of the code example.
-
-
 ## Related resources
 
 Resources | Links
 ----------|--------------------------
-Application notes  | [AN235935](https://www.infineon.com/AN235935) – Getting started with PSOC&trade; Edge E8 MCU on ModusToolbox&trade; software <br> [AN236697](https://www.infineon.com/AN236697) – Getting started with PSOC&trade; MCU and AIROC&trade; connectivity devices
+Application notes  | [AN235935](https://www.infineon.com/AN235935) – Getting started with PSOC&trade; Edge E8 MCU on ModusToolbox&trade; software <br> [AN236697](https://www.infineon.com/AN236697) – Getting started with PSOC&trade; MCU and AIROC&trade; connectivity devices <br> [AN240916](https://www.infineon.com/AN240916) – DEEPCRAFT&trade; Audio Enhancement (AE) on PSOC&trade; Edge E84 MCU
 Code examples  | [Using ModusToolbox&trade;](https://github.com/Infineon/Code-Examples-for-ModusToolbox-Software) on GitHub
 Device documentation | [PSOC&trade; Edge E84 MCU datasheet](https://www.infineon.com/products/microcontroller/32-bit-psoc-arm-cortex/32-bit-psoc-edge-arm/psoc-edge-e84#Documents) <br> [PSOC&trade; Edge E84 MCU reference manuals](https://www.infineon.com/products/microcontroller/32-bit-psoc-arm-cortex/32-bit-psoc-edge-arm/psoc-edge-e84#Documents)
 Development kits | Select your kits from the [Evaluation board finder](https://www.infineon.com/cms/en/design-support/finder-selection-tools/product-finder/evaluation-board)
@@ -132,7 +128,8 @@ Document title: *CE242406* – *PSOC&trade; Edge MCU: Bluetooth&reg; HFP Hands f
 
 Version | Description of change
 ------- | ---------------------
-1.0.0   | New code example
+1.0.0   | New code example 
+1.1.0   | Added AFE and Noise Cancellation support
 <br>
 
 

@@ -6,33 +6,33 @@
 * Related Document: See README.md
 *
 ********************************************************************************
- * (c) 2025, Infineon Technologies AG, or an affiliate of Infineon
- * Technologies AG. All rights reserved.
- * This software, associated documentation and materials ("Software") is
- * owned by Infineon Technologies AG or one of its affiliates ("Infineon")
- * and is protected by and subject to worldwide patent protection, worldwide
- * copyright laws, and international treaty provisions. Therefore, you may use
- * this Software only as provided in the license agreement accompanying the
- * software package from which you obtained this Software. If no license
- * agreement applies, then any use, reproduction, modification, translation, or
- * compilation of this Software is prohibited without the express written
- * permission of Infineon.
- *
- * Disclaimer: UNLESS OTHERWISE EXPRESSLY AGREED WITH INFINEON, THIS SOFTWARE
- * IS PROVIDED AS-IS, WITH NO WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
- * INCLUDING, BUT NOT LIMITED TO, ALL WARRANTIES OF NON-INFRINGEMENT OF
- * THIRD-PARTY RIGHTS AND IMPLIED WARRANTIES SUCH AS WARRANTIES OF FITNESS FOR A
- * SPECIFIC USE/PURPOSE OR MERCHANTABILITY.
- * Infineon reserves the right to make changes to the Software without notice.
- * You are responsible for properly designing, programming, and testing the
- * functionality and safety of your intended application of the Software, as
- * well as complying with any legal requirements related to its use. Infineon
- * does not guarantee that the Software will be free from intrusion, data theft
- * or loss, or other breaches ("Security Breaches"), and Infineon shall have
- * no liability arising out of any Security Breaches. Unless otherwise
- * explicitly approved by Infineon, the Software may not be used in any
- * application where a failure of the Product or any consequences of the use
- * thereof can reasonably be expected to result in personal injury.
+* (c) 2025-2026, Infineon Technologies AG, or an affiliate of Infineon
+* Technologies AG. All rights reserved.
+* This software, associated documentation and materials ("Software") is
+* owned by Infineon Technologies AG or one of its affiliates ("Infineon")
+* and is protected by and subject to worldwide patent protection, worldwide
+* copyright laws, and international treaty provisions. Therefore, you may use
+* this Software only as provided in the license agreement accompanying the
+* software package from which you obtained this Software. If no license
+* agreement applies, then any use, reproduction, modification, translation, or
+* compilation of this Software is prohibited without the express written
+* permission of Infineon.
+*
+* Disclaimer: UNLESS OTHERWISE EXPRESSLY AGREED WITH INFINEON, THIS SOFTWARE
+* IS PROVIDED AS-IS, WITH NO WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+* INCLUDING, BUT NOT LIMITED TO, ALL WARRANTIES OF NON-INFRINGEMENT OF
+* THIRD-PARTY RIGHTS AND IMPLIED WARRANTIES SUCH AS WARRANTIES OF FITNESS FOR A
+* SPECIFIC USE/PURPOSE OR MERCHANTABILITY.
+* Infineon reserves the right to make changes to the Software without notice.
+* You are responsible for properly designing, programming, and testing the
+* functionality and safety of your intended application of the Software, as
+* well as complying with any legal requirements related to its use. Infineon
+* does not guarantee that the Software will be free from intrusion, data theft
+* or loss, or other breaches ("Security Breaches"), and Infineon shall have
+* no liability arising out of any Security Breaches. Unless otherwise
+* explicitly approved by Infineon, the Software may not be used in any
+* application where a failure of the Product or any consequences of the use
+* thereof can reasonably be expected to result in personal injury.
 *******************************************************************************/
 /*******************************************************************************
 * Header file includes
@@ -46,7 +46,8 @@
 #include "audio_platform_common.h"
 #include "handsfree_unit.h"
 #include "handsfree_unit_main.h"
-#include "app_pdm_pcm.h"
+#include "handsfree_unit_api.h"
+
 #include "sbc_decoder.h"
 #include "semphr.h"
 #include "stdio.h"
@@ -57,12 +58,16 @@
 #include <string.h>
 #include <time.h>
 
+#include "pdm_mic_interface.h"
+
 /*******************************************************************************
 * Macros
 *******************************************************************************/
 #define ZERO                                (0U)
 #define ONE                                 (1U)
 #define TWO                                 (2U)
+
+#define NREC_ENABLED                        (1U)
 
 /*******************************************************************************
 * Structures and Enumerations
@@ -91,6 +96,7 @@ wiced_bt_sco_params_t handsfree_esco_params = {
 
 #define BT_HFP_HF_DEF_SPK_VOL                (8U)
 #define BT_HFP_HF_DEF_MIC_VOL                (8U)
+#define MIC_DATA_LENTH                       (480U)
 
 /*******************************************************************************
 * Global variables
@@ -102,8 +108,8 @@ uint8_t bondindex = ZERO;
 
 bluetooth_hfp_context_t handsfree_ctxt_data;
 handsfrees_app_globals handsfree_app_states;
-bool incoming_call = 0;
-uint8_t mic_data[480] = {ZERO};
+bool incoming_call = false;
+uint8_t mic_data[MIC_DATA_LENTH] = {ZERO};
 
 /*******************************************************************************
 * Function prototypes
@@ -173,13 +179,7 @@ wiced_result_t handsfree_management_callback(wiced_bt_management_evt_t event,
             wiced_bt_set_pairable_mode(WICED_FALSE, WICED_FALSE);
 
             handsfree_post_bt_init(p_event_data);
-            notify_init_done();
-            
-            if (CY_RSLT_SUCCESS == app_bt_restore_bond_data()) {
-                printf("Keys found in NVM, add them to Addr Res DB\n");
-                /* Load previous paired keys for address resolution */
-                app_bt_add_devices_to_address_resolution_db();
-            }
+            notify_init_done();    
         } 
         else 
         {
@@ -460,7 +460,7 @@ void handsfree_hfp_init(void)
 
     msbc_audio_init(pb_config_params);
 
-    app_pdm_pcm_init();
+    pdm_mic_interface_init();
 }
 
 /*******************************************************************************
@@ -1042,13 +1042,13 @@ static void handsfree_call_setup_event_handler(
             case WICED_BT_HFP_HF_CALLSETUP_STATE_INCOMING:
                 printf("Call(incoming) setting-up\n");
                 start_audio_playback();
-                incoming_call = 1;
+                incoming_call = true;
                 break;
 
             case WICED_BT_HFP_HF_CALLSETUP_STATE_IDLE:
                 if (WICED_FALSE == call_data->active_call_present)
                 {
-                    incoming_call = 0;
+                    incoming_call = false;
                     if ((WICED_BT_HFP_HF_CALLSETUP_STATE_INCOMING == 
                         handsfree_ctxt_data.call_setup) ||
                         (WICED_BT_HFP_HF_CALLSETUP_STATE_DIALING == 
@@ -1086,6 +1086,13 @@ static void handsfree_call_setup_event_handler(
                         printf("Call: Active\n");
                         handsfree_ctxt_data.call_active = 
                             call_data->active_call_present;
+
+                        /* Enable noise reduction and echo cancellation on 
+                         * remote end 
+                         */
+                        handsfree_send_at_command(
+                            (uint16_t)handsfree_ctxt_data.rfcomm_handle, 
+                            HF_AT_CMD_NREC, NREC_ENABLED, NULL);
 
                         /* Start Capture */
                         start_audio_capture();

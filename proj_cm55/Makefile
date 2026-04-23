@@ -7,7 +7,7 @@
 #
 ################################################################################
 # \copyright
-# (c) 2025, Infineon Technologies AG, or an affiliate of Infineon
+# (c) 2025-2026, Infineon Technologies AG, or an affiliate of Infineon
 # Technologies AG.  SPDX-License-Identifier: Apache-2.0
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,6 +61,7 @@ DISABLE_COMPONENTS=
 
 CORE=CM55
 CORE_NAME=CM55_0
+NPU=U55
 
 # By default the build system automatically looks in the Makefile's directory
 # tree for source code and builds it. The SOURCES variable can be used to
@@ -76,14 +77,14 @@ INCLUDES+=
 DEFINES+=CY_RETARGET_IO_CONVERT_LF_TO_CRLF
 
 # Select softfp or hardfp floating point. Default is softfp.
-VFP_SELECT+=hardfp
+VFP_SELECT+=
 
 # Additional / custom C compiler flags.
 #
 # NOTE: Includes and defines should use the INCLUDES and DEFINES variable
 # above.
 CFLAGS+=
-
+ 
 # Additional / custom C++ compiler flags.
 #
 # NOTE: Includes and defines should use the INCLUDES and DEFINES variable
@@ -106,14 +107,22 @@ LDLIBS+=
 LINKER_SCRIPT=
 
 # Custom pre-build commands to run.
-PREBUILD=
+PREBUILD+=
 
 # Custom post-build commands to run.
-POSTBUILD=
+POSTBUILD+=
 
 ################################################################################
 # Application specific Configurations to use COMPONENTS, DEFINES and flags.
 ################################################################################
+
+# Automatic Gain Control
+# AGC_ON    - Enables AGC on Audio Enhancement processed data.
+# AGC_OFF   - Disables AGC on Audio Enhancement processed data. (Default value)
+CONFIG_AGC_MODE=AGC_OFF
+ifeq ($(CONFIG_AGC_MODE),AGC_ON)
+    DEFINES += ENABLE_IFX_AGC
+endif
 
 ifeq ($(HFP_WBS_MODE),1)
 DEFINES+=WICED_BT_HFP_HF_WBS_INCLUDED=1
@@ -123,6 +132,65 @@ ifneq (,$(findstring SBC_CODEC,$(COMPONENTS)))
 SBC_CODEC_DEFINES=ENABLE_SBC_DECODE ENABLE_SBC_ENCODE
 DEFINES += $(SBC_CODEC_DEFINES) 
 endif
+
+##AFE configuration and related macros
+COMPONENTS +=APP_LOGGER
+#AFE middleware priority
+#DEFINES +=AFE_AUDIO_PROCESSING_TASK_PRIORITY=2
+
+#AFE configuration and related macros
+COMPONENTS += CMSIS_DSP
+
+DEFINES += RUN_FLOAT_FE
+DEFINES += ENABLE_AFE_MW_SUPPORT
+DEFINES += CY_AFE_ENABLE_TUNING_FEATURE
+
+DEFINES+=DSNS_ENABLE_MTB_ML
+COMPONENTS+=MW_DSNS_MODEL MW_MDL_DSNS MW_MDL_DSES
+DEFINES+=USE_MTB_ML
+
+ifeq ($(CONFIG_VOICE_CORE_MODE),LIMITED)
+    COMPONENTS+=AVC_DEMO
+endif
+
+ifeq ($(CONFIG_VOICE_CORE_MODE),FULL)
+    COMPONENTS+=AVC_FULL
+endif
+# DSNS and DSES with MTB-ML middleware 
+NPU=U55
+DEFINES+=ETHOSU55
+COMPONENTS+=ML_TFLM
+DEFINES+=TF_LITE_STATIC_MEMORY
+COMPONENTS+=ML_INT16x8
+DEFINES+= CY_ML_MODEL_MEM=.cy_socmem_data
+NN_TYPE=int16x8
+COMPONENTS+=U55
+
+# For Ethos-U Cache management control (Default is All layers)
+#DEFINES+=MTB_ML_ETHOSU_CACHE_MGMT_TYPE=MTB_ML_ETHOSU_CACHE_MGMT_ALL_LAYERS
+
+
+#CE modes
+ifeq ($(CONFIG_AE_MODE),FUNCTIONAL)
+    DEFINES+=AE_FUNCTIONAL_MODE
+else
+    DEFINES+=AE_TUNING_MODE
+endif
+
+
+#TLV Codec related settings
+#Choose between Headphone and on-board speaker
+#USE_HEADPHONE/USE_SPEAKER
+#DEFINES+=USE_SPEAKER
+#Set processing block to 0x10 for 16kHz playback
+DEFINES+=TLV320DAC3100_PROCESSING_BLOCK=0x10
+
+#PDM mic settings - EVK 
+#GAIN_CONTROL_ON - to restrict max gain level
+DEFINES +=GAIN_CONTROL_ON
+DEFINES +=AFE_MIN_MIC_INPUT_HW_GAIN=-103.0
+DEFINES +=AFE_MAX_MIC_INPUT_HW_GAIN=71.0
+
 
 ################################################################################
 # Paths
@@ -145,5 +213,8 @@ CY_GETLIBS_SHARED_PATH=../..
 # Directory name of the shared repo location.
 #
 CY_GETLIBS_SHARED_NAME=mtb_shared
+
+CY_AVC_PATH=$(SEARCH_audio-voice-core)
+CY_AFE_PATH=$(SEARCH_audio-front-end)
 
 include $(CY_TOOLS_DIR)/make/start.mk

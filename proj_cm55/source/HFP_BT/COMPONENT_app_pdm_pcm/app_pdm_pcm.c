@@ -4,47 +4,60 @@
 * Description : Source file for PDM PCM.
 *
 ********************************************************************************
- * (c) 2025, Infineon Technologies AG, or an affiliate of Infineon
- * Technologies AG. All rights reserved.
- * This software, associated documentation and materials ("Software") is
- * owned by Infineon Technologies AG or one of its affiliates ("Infineon")
- * and is protected by and subject to worldwide patent protection, worldwide
- * copyright laws, and international treaty provisions. Therefore, you may use
- * this Software only as provided in the license agreement accompanying the
- * software package from which you obtained this Software. If no license
- * agreement applies, then any use, reproduction, modification, translation, or
- * compilation of this Software is prohibited without the express written
- * permission of Infineon.
- *
- * Disclaimer: UNLESS OTHERWISE EXPRESSLY AGREED WITH INFINEON, THIS SOFTWARE
- * IS PROVIDED AS-IS, WITH NO WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
- * INCLUDING, BUT NOT LIMITED TO, ALL WARRANTIES OF NON-INFRINGEMENT OF
- * THIRD-PARTY RIGHTS AND IMPLIED WARRANTIES SUCH AS WARRANTIES OF FITNESS FOR A
- * SPECIFIC USE/PURPOSE OR MERCHANTABILITY.
- * Infineon reserves the right to make changes to the Software without notice.
- * You are responsible for properly designing, programming, and testing the
- * functionality and safety of your intended application of the Software, as
- * well as complying with any legal requirements related to its use. Infineon
- * does not guarantee that the Software will be free from intrusion, data theft
- * or loss, or other breaches ("Security Breaches"), and Infineon shall have
- * no liability arising out of any Security Breaches. Unless otherwise
- * explicitly approved by Infineon, the Software may not be used in any
- * application where a failure of the Product or any consequences of the use
- * thereof can reasonably be expected to result in personal injury.
+* (c) 2025-2026, Infineon Technologies AG, or an affiliate of Infineon
+* Technologies AG. All rights reserved.
+* This software, associated documentation and materials ("Software") is
+* owned by Infineon Technologies AG or one of its affiliates ("Infineon")
+* and is protected by and subject to worldwide patent protection, worldwide
+* copyright laws, and international treaty provisions. Therefore, you may use
+* this Software only as provided in the license agreement accompanying the
+* software package from which you obtained this Software. If no license
+* agreement applies, then any use, reproduction, modification, translation, or
+* compilation of this Software is prohibited without the express written
+* permission of Infineon.
+*
+* Disclaimer: UNLESS OTHERWISE EXPRESSLY AGREED WITH INFINEON, THIS SOFTWARE
+* IS PROVIDED AS-IS, WITH NO WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+* INCLUDING, BUT NOT LIMITED TO, ALL WARRANTIES OF NON-INFRINGEMENT OF
+* THIRD-PARTY RIGHTS AND IMPLIED WARRANTIES SUCH AS WARRANTIES OF FITNESS FOR A
+* SPECIFIC USE/PURPOSE OR MERCHANTABILITY.
+* Infineon reserves the right to make changes to the Software without notice.
+* You are responsible for properly designing, programming, and testing the
+* functionality and safety of your intended application of the Software, as
+* well as complying with any legal requirements related to its use. Infineon
+* does not guarantee that the Software will be free from intrusion, data theft
+* or loss, or other breaches ("Security Breaches"), and Infineon shall have
+* no liability arising out of any Security Breaches. Unless otherwise
+* explicitly approved by Infineon, the Software may not be used in any
+* application where a failure of the Product or any consequences of the use
+* thereof can reasonably be expected to result in personal injury.
 *******************************************************************************/
+
 /*******************************************************************************
 * Header file includes
 *******************************************************************************/
+#include "cy_utils.h"
 #include "app_pdm_pcm.h"
 #include "audio_encoder_task.h"
-#include "cy_utils.h"
+#include "audio_input_configuration.h"
 
 /*******************************************************************************
 * Macros
 ********************************************************************************/
-#define ZERO                                        (0U)
-#define ONE_BYTE_BITS                               (8U)
-#define ONE_BYTE_MASK                               (0xFF)
+#ifdef ENABLE_STEREO_INPUT_FEED
+#define MIC_MODE                         (2U)
+#else
+#define MIC_MODE                         (1U)
+#endif /* ENABLE_STEREO_INPUT_FEED */
+
+#define TX_PCM_FRAME_SIZE                (640U)
+#define PDM_PCM_HW_FIFO_SIZE             (64U)
+#define PDM_PCM_FRAME_INTR_CNT           (5U)
+#define MIC_RX_SAMPLES_COUNT             (160U * MIC_MODE)
+
+#define ZERO                             (0U)
+#define ONE_BYTE_BITS                    (8U)
+#define ONE_BYTE_MASK                    (0xFF)
 
 /*******************************************************************************
 * Global Variables
@@ -55,17 +68,29 @@ const cy_stc_sysint_t PDM_IRQ_cfg = {
     .intrPriority = PDM_PCM_ISR_PRIORITY
 };
 
-/*******************************************************************************
-* Static Variables
-*******************************************************************************/
-static uint8_t  tx_msbc_data[TX_SBC_BUFFER_SIZE] = {ZERO};
+int16_t mic_audio_app_buffer_ping[MIC_RX_SAMPLES_COUNT] = {0};
+int16_t mic_audio_app_buffer_pong[MIC_RX_SAMPLES_COUNT] = {0};
 
+int16_t* ping_pong_local_pointer = NULL;
+int16_t* ping_pong_buffer_pointer = NULL;
+volatile uint8_t pdm_pcm_intr_cnt = 0;
+
+uint8_t  tx_msbc_data[TX_SBC_BUFFER_SIZE]__attribute__ ((section(".cy_socmem_data"))) = {0};
+uint8_t  tx_pcm_data[TX_PCM_BUFFER_SIZE]__attribute__ ((section(".cy_socmem_data"))) = {0};
+
+uint32_t current_tx_pcm_index = 0;
+uint32_t current_tx_sbc_index = 0;
+
+/*******************************************************************************
+ * Static Variables
+ *******************************************************************************/
 /* Variable to send commands to Encoder task queue. */
 static audio_encoder_q_data_t encoder_q_data;
 
 /*******************************************************************************
 * Function Declarations
 *******************************************************************************/
+extern void audio_mic_data_feed_cm55(int16_t *audio_data);
 static void pdm_pcm_isr_handler(void);
 
 /*******************************************************************************
@@ -87,7 +112,7 @@ static void pdm_pcm_isr_handler(void);
  ******************************************************************************/
 void app_pdm_pcm_init(void)
 {
-    cy_en_pdm_pcm_gain_sel_t gain_scale = CY_PDM_PCM_SEL_GAIN_NEGATIVE_37DB;
+    cy_en_pdm_pcm_gain_sel_t gain_scale = ZERO;
 
     if (CY_PDM_PCM_SUCCESS != Cy_PDM_PCM_Init(PDM0, &CYBSP_PDM_config))
     {
@@ -150,70 +175,82 @@ void app_pdm_pcm_activate(void)
 *******************************************************************************/
 static void pdm_pcm_isr_handler(void)
 {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    static bool ping_pong = false;
+    volatile uint32_t int_stat;
 
-    volatile uint32_t int_stat = 
-        Cy_PDM_PCM_Channel_GetInterruptStatusMasked(PDM0, RIGHT_CH_INDEX);
-
-    if (CY_PDM_PCM_INTR_RX_TRIGGER & int_stat)
+    /* Choose the ping pong buffer */
+    if(ZERO == pdm_pcm_intr_cnt)
     {
-        /* Temporary buffer for mono mic data */
-        static uint8_t mic_pcm_frame[TX_PCM_FRAME_SIZE];
-        static uint16_t mic_index = ZERO;
-
-        for (uint8_t i = ZERO; i < RX_FIFO_TRIG_LEVEL; i++)
+        if (ping_pong)
         {
-            int32_t left = 
-                (int32_t)Cy_PDM_PCM_Channel_ReadFifo(PDM0, LEFT_CH_INDEX);
+            ping_pong_local_pointer = mic_audio_app_buffer_ping;
+        }
+        else
+        {
+            ping_pong_local_pointer = mic_audio_app_buffer_pong;
+        }
+        ping_pong_buffer_pointer = ping_pong_local_pointer;
+    }
 
-            int32_t right = 
-                (int32_t)Cy_PDM_PCM_Channel_ReadFifo(PDM0, RIGHT_CH_INDEX);
+    int_stat = Cy_PDM_PCM_Channel_GetInterruptStatusMasked(PDM0, 
+        RIGHT_CH_INDEX);
+    if(CY_PDM_PCM_INTR_RX_TRIGGER & int_stat)
+    {
+        for(uint8_t i=0; i < RX_FIFO_TRIG_LEVEL; i++)
+        {
+#ifdef ENABLE_STEREO_INPUT_FEED
+            int32_t data = (int32_t)Cy_PDM_PCM_Channel_ReadFifo(PDM0, 
+                LEFT_CH_INDEX);
+            
+            *(ping_pong_buffer_pointer) = (int16_t)(data);
+            ping_pong_buffer_pointer++;
 
-            /* Mono mix (L+R)/2 */
-            int16_t pcm_sample = 
-                (int16_t)((left + right) / AUDIO_CHANNELS_TO_MIX);
-
-            /* Store little-endian 16-bit PCM */
-            mic_pcm_frame[mic_index++] = (uint8_t)(pcm_sample & ONE_BYTE_MASK);
-            mic_pcm_frame[mic_index++] = 
-                (uint8_t)((pcm_sample >> ONE_BYTE_BITS) & ONE_BYTE_MASK);
-
-            /* Once we have a complete 15 ms PCM frame 
-             * (480 bytes @ 16 kHz, 16-bit) 
-             */
-            if (TX_PCM_FRAME_SIZE <= mic_index)
-            {
-
-                encoder_q_data.cmd = CMD_ENCODE_DATA;
-                encoder_q_data.in_data = mic_pcm_frame;
-                encoder_q_data.in_data_len = TX_PCM_FRAME_SIZE;
-
-                encoder_q_data.out_data = tx_msbc_data;
-                encoder_q_data.out_data_len = TX_SBC_FRAME_SIZE;
-
-                /* Send processed PCM to encoder queue */
-                xQueueSendFromISR(audio_encoder_task_q, 
-                    &encoder_q_data, &xHigherPriorityTaskWoken);
-
-                mic_index = ZERO;
-
-                portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-            }
+            data = (int32_t)Cy_PDM_PCM_Channel_ReadFifo(PDM0, RIGHT_CH_INDEX);
+            
+            *(ping_pong_buffer_pointer) = (int16_t)(data);
+            ping_pong_buffer_pointer++;
+#else
+            int32_t data = (int32_t)Cy_PDM_PCM_Channel_ReadFifo(PDM0, 
+                LEFT_CH_INDEX);
+            data = (int32_t)Cy_PDM_PCM_Channel_ReadFifo(PDM0, RIGHT_CH_INDEX);
+            *(ping_pong_buffer_pointer) = (int16_t)(data);
+            ping_pong_buffer_pointer++;
+#endif
         }
 
-        /* Clear RX interrupt */
-        Cy_PDM_PCM_Channel_ClearInterrupt(PDM0, RIGHT_CH_INDEX,
+        if (pdm_pcm_intr_cnt < PDM_PCM_FRAME_INTR_CNT)
+        {
+            pdm_pcm_intr_cnt++;
+        }
+
+        if (PDM_PCM_FRAME_INTR_CNT == pdm_pcm_intr_cnt)
+        {
+            pdm_pcm_intr_cnt = 0;
+
+            audio_mic_data_feed_cm55(ping_pong_local_pointer);
+
+            ping_pong = !ping_pong;
+            if (ping_pong)
+            {
+                ping_pong_local_pointer = mic_audio_app_buffer_ping;
+            }
+            else
+            {
+                ping_pong_local_pointer = mic_audio_app_buffer_pong;
+            }
+            ping_pong_buffer_pointer = ping_pong_local_pointer;
+        }
+
+        Cy_PDM_PCM_Channel_ClearInterrupt(PDM0, RIGHT_CH_INDEX, 
             CY_PDM_PCM_INTR_RX_TRIGGER);
     }
 
-    /* Overflow / Underflow handling */
-    if ((CY_PDM_PCM_INTR_RX_FIR_OVERFLOW | CY_PDM_PCM_INTR_RX_OVERFLOW |
+    if((CY_PDM_PCM_INTR_RX_FIR_OVERFLOW | CY_PDM_PCM_INTR_RX_OVERFLOW |
         CY_PDM_PCM_INTR_RX_IF_OVERFLOW | CY_PDM_PCM_INTR_RX_UNDERFLOW) & 
         int_stat)
     {
         Cy_PDM_PCM_Channel_ClearInterrupt(PDM0, RIGHT_CH_INDEX, 
             CY_PDM_PCM_INTR_MASK);
-        printf("Warning: PDM/PCM overflow or underflow detected!\n");
     }
 }
 
@@ -438,6 +475,62 @@ void set_pdm_pcm_gain(cy_en_pdm_pcm_gain_sel_t gain)
     Cy_PDM_PCM_SetGain(PDM0, RIGHT_CH_INDEX, gain);
     Cy_PDM_PCM_SetGain(PDM0, LEFT_CH_INDEX, gain);
 }
+
+/*******************************************************************************
+* Function Name: pdm_pcm_data_passer
+********************************************************************************
+* Summary:
+*  Send PDM PCM data to encoder.
+*
+* Parameters:
+*  mono  : Mono data stream
+*
+* Return:
+*  None
+*
+*******************************************************************************/
+void pdm_pcm_data_passer(char *mono)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if ((current_tx_pcm_index + TX_PCM_FRAME_SIZE) > TX_PCM_BUFFER_SIZE)
+    {
+        current_tx_pcm_index = 0;
+    }
+    
+    if ((current_tx_sbc_index + TX_SBC_FRAME_SIZE) > TX_SBC_BUFFER_SIZE)
+    {
+        current_tx_sbc_index = 0;
+    }
+
+    memcpy((uint8_t *)&(tx_pcm_data[current_tx_pcm_index]), 
+        (uint8_t *)&(mono[0]), TX_PCM_FRAME_SIZE);
+
+    encoder_q_data.cmd = CMD_ENCODE_DATA;
+    encoder_q_data.in_data = (uint8_t *) &(tx_pcm_data[current_tx_pcm_index]);
+    encoder_q_data.in_data_len = TX_PCM_FRAME_SIZE;
+
+    encoder_q_data.out_data = (uint8_t *) &(tx_msbc_data[current_tx_sbc_index]);
+    encoder_q_data.out_data_len = TX_SBC_FRAME_SIZE;
+
+    current_tx_pcm_index += TX_PCM_FRAME_SIZE;
+    if (current_tx_pcm_index >= TX_PCM_BUFFER_SIZE)
+    {
+        current_tx_pcm_index = 0;
+    }
+
+    current_tx_sbc_index += TX_SBC_FRAME_SIZE;
+    if (current_tx_sbc_index >= TX_SBC_BUFFER_SIZE)
+    {
+        current_tx_sbc_index = 0;
+    }
+
+    /* Send command to Audio encoder task */
+    xQueueSendFromISR(audio_encoder_task_q, &encoder_q_data, 
+        &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
 
 /* [] END OF FILE */
 

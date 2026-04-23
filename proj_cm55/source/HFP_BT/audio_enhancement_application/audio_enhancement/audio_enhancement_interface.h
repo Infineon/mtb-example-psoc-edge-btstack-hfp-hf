@@ -1,0 +1,81 @@
+/******************************************************************************
+* File Name : audio_enhancement_interface.h
+*
+* Description :
+* Header file for DEEPCRAFT Audio Enhancement wrapper interface
+********************************************************************************
+* (c) 2025-2026, Infineon Technologies AG, or an affiliate of Infineon
+* Technologies AG. All rights reserved.
+* This software, associated documentation and materials ("Software") is
+* owned by Infineon Technologies AG or one of its affiliates ("Infineon")
+* and is protected by and subject to worldwide patent protection, worldwide
+* copyright laws, and international treaty provisions. Therefore, you may use
+* this Software only as provided in the license agreement accompanying the
+* software package from which you obtained this Software. If no license
+* agreement applies, then any use, reproduction, modification, translation, or
+* compilation of this Software is prohibited without the express written
+* permission of Infineon.
+*
+* Disclaimer: UNLESS OTHERWISE EXPRESSLY AGREED WITH INFINEON, THIS SOFTWARE
+* IS PROVIDED AS-IS, WITH NO WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+* INCLUDING, BUT NOT LIMITED TO, ALL WARRANTIES OF NON-INFRINGEMENT OF
+* THIRD-PARTY RIGHTS AND IMPLIED WARRANTIES SUCH AS WARRANTIES OF FITNESS FOR A
+* SPECIFIC USE/PURPOSE OR MERCHANTABILITY.
+* Infineon reserves the right to make changes to the Software without notice.
+* You are responsible for properly designing, programming, and testing the
+* functionality and safety of your intended application of the Software, as
+* well as complying with any legal requirements related to its use. Infineon
+* does not guarantee that the Software will be free from intrusion, data theft
+* or loss, or other breaches ("Security Breaches"), and Infineon shall have
+* no liability arising out of any Security Breaches. Unless otherwise
+* explicitly approved by Infineon, the Software may not be used in any
+* application where a failure of the Product or any consequences of the use
+* thereof can reasonably be expected to result in personal injury.
+*******************************************************************************/
+
+/*******************************************************************************
+* Include guard
+*******************************************************************************/
+
+#ifndef __AUDIO_ENHANCEMENT_INTERFACE_H__
+#define __AUDIO_ENHANCEMENT_INTERFACE_H__
+
+#ifdef __cplusplus
+extern "C" {
+#endif  /* __cplusplus */
+
+/*******************************************************************************
+* Header Files
+*******************************************************************************/
+#include "audio_enhancement.h"
+#include "cy_audio_front_end_error.h"
+#include "cy_afe_configurator_settings.h"
+#ifdef PROFILER_ENABLE
+#include "cy_afe_profiler.h"
+#include "cy_profiler.h"
+#endif /* PROFILER_ENABLE */
+
+
+/*******************************************************************************
+* Macros
+*******************************************************************************/
+
+#ifdef PROFILER_ENABLE
+#define AE_APP_PROFILE                                (0)
+#endif /* PROFILER_ENABLE */
+
+/*******************************************************************************
+ * Function Prototypes
+ *******************************************************************************/
+
+
+int ae_interface_feed(void* audio_input, void* aec_buffer);
+int ae_interface_init(int);
+void mains_powered_aec_task(void *arg);
+
+#ifdef __cplusplus
+} /*extern "C" */
+#endif  /* __cplusplus */
+#endif /* __AUDIO_ENHANCEMENT_INTERFACE_H__ */
+
+/* [] END OF FILE */
