@@ -568,7 +568,7 @@ uint8_t handsfree_is_valid_state (int user_input)
     }
 
 
-    switch(handsfree_ctxt_data.is_sco_connected)
+    switch(handsfree_ctxt_data.connection_status)
     {
     case WICED_BT_HFP_HF_STATE_DISCONNECTED:
         WICED_BT_TRACE("Current State: WICED_BT_HFP_HF_STATE_DISCONNECTED\n");

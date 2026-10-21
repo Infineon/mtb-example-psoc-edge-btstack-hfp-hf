@@ -563,7 +563,7 @@ static void handsfree_event_callback(wiced_bt_hfp_hf_event_t event,
 
     memset(&p_val, ZERO, sizeof(hci_control_hf_event_t));
 
-    switch (event) 
+    switch ((int)event)
     {
     case WICED_BT_HFP_HF_CONNECTION_STATE_EVT:
         handsfree_connection_event_handler(p_data);
@@ -856,6 +856,8 @@ void hf_sco_management_callback(wiced_bt_management_evt_t event,
      * #wiced_bt_sco_connection_change_t */
     case BTM_SCO_CONNECTION_CHANGE_EVT:
         WICED_BT_TRACE("%s: SCO connection change event handler\n", __func__);
+        break;
+    default:
         break;
     }
 }
